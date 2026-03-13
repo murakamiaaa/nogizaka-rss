@@ -4,12 +4,13 @@ from feedgen.feed import FeedGenerator
 import datetime
 import time
 import os
+import sys
 
 def get_blog_detail(session, url):
     """個別記事から本文と画像URLを抽出する"""
     try:
-        time.sleep(1) # サーバー負荷軽減
-        res = session.get(url, timeout=10)
+        time.sleep(1) # サーバーへの礼儀（負荷軽減）
+        res = session.get(url, timeout=15)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
         
@@ -17,21 +18,20 @@ def get_blog_detail(session, url):
         article_box = soup.find('div', class_='bd--edit')
         
         if article_box:
-            # 画像URLを絶対パスに変換
+            # 画像URLを絶対パスに変換（これをしないとRSSで画像が出ません）
             for img in article_box.find_all('img'):
                 src = img.get('src')
                 if src and src.startswith('/'):
                     img['src'] = f"https://www.nogizaka46.com{src}"
             return str(article_box)
         else:
-            return "<p>本文の抽出に失敗しました（タグが見つかりません）。</p>"
+            return "<p>本文の抽出に失敗しました（bd--editが見つかりません）。</p>"
     except Exception as e:
         return f"<p>記事取得エラー: {e}</p>"
 
 def create_rss():
     list_url = "https://www.nogizaka46.com/s/n46/diary/blog/list"
     
-    # RSSフィードの基本設定
     fg = FeedGenerator()
     fg.id(list_url)
     fg.title("乃木坂46 公式ブログ RSS")
@@ -39,41 +39,47 @@ def create_rss():
     fg.description("乃木坂46メンバーの公式ブログを全文でお届けします")
     fg.language('ja')
 
-    # アイコン設定
+    # アイコン設定（乃木坂カラーのロゴ）
     icon_url = "https://www.nogizaka46.com/images/46/common/logo_01.png"
     fg.logo(icon_url)
     fg.icon(icon_url)
 
     session = requests.Session()
+    # ブラウザになりすますためのヘッダー
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     })
 
-    print(f"--- 乃木坂46ブログ 解析開始 ---")
+    print("--- 乃木坂46ブログ 解析開始 ---")
 
     try:
-        res = session.get(list_url, timeout=10)
+        res = session.get(list_url, timeout=15)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # 記事へのリンク（aタグ）をすべて取得
+        # 記事へのリンク（aタグ）を抽出
         article_links = []
+        # 全てのリンクを調べて乃木坂のブログ詳細ページっぽいやつを拾う
         for a in soup.find_all('a', href=True):
-            if '/s/n46/diary/detail/' in a['href']:
-                href = a['href']
+            href = a['href']
+            if '/s/n46/diary/detail/' in href:
                 full_url = f"https://www.nogizaka46.com{href}" if href.startswith('/') else href
-                # 重複チェック
-                if full_url not in [link['url'] for link in article_links]:
+                # 重複を排除して追加
+                if not any(link['url'] == full_url for link in article_links):
                     article_links.append({'url': full_url, 'element': a})
 
-        print(f"候補記事数: {len(article_links)}件")
+        print(f"候補記事数: {len(article_links)}件見つかりました")
 
-        # 最新の12件（1ページ分）を処理
+        if not article_links:
+            print("❌ 記事が1件も見つかりませんでした。HTMLの構造が変わった可能性があります。")
+            sys.exit(1) # 異常終了させてActionsに知らせる
+
+        # 最新の12件（乃木坂の1ページ分）を処理
         for item in article_links[:12]:
             url = item['url']
             element = item['element']
             
-            # 碧さんが調査したクラス名を使用
+            # 碧さんが見つけてくれたクラス名で抽出
             title_tag = element.find('p', class_='m--postone__ttl')
             name_tag = element.find('p', class_='m--postone__name')
             
@@ -83,28 +89,28 @@ def create_rss():
 
             print(f"解析中: {final_title}")
             
-            # 本文を取得
-            full_html_content = get_blog_detail(session, url)
+            content = get_blog_detail(session, url)
             
             fe = fg.add_entry()
             fe.id(url)
             fe.title(final_title)
             fe.link(href=url)
-            fe.description(full_html_content)
-            # 現在時刻を公開日として設定
+            fe.description(content)
             fe.pubDate(datetime.datetime.now(datetime.timezone.utc))
 
-        # 保存実行
+        # RSSファイルの書き出し
         output_file = 'feed.xml'
         fg.rss_file(output_file)
         
         if os.path.exists(output_file):
-            print(f"✅ 成功: {output_file} を生成しました！")
+            print(f"✅ 成功: {output_file} を書き出しました！")
         else:
-            print(f"❌ 失敗: ファイルが生成されませんでした。")
+            print(f"❌ 失敗: プログラムは最後まで走りましたが、ファイルが生成されませんでした。")
+            sys.exit(1)
 
     except Exception as e:
-        print(f"エラー発生: {e}")
+        print(f"💥 重大なエラーが発生しました: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     create_rss()
