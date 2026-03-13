@@ -5,7 +5,7 @@ import datetime
 import time
 import os
 import sys
-from urllib.parse import urljoin # 💡 魔法のツールを追加
+from urllib.parse import urljoin # 相対URLを絶対URLに翻訳する魔法
 
 def get_blog_detail(session, url):
     """個別記事から本文を抽出"""
@@ -22,7 +22,7 @@ def get_blog_detail(session, url):
             for img in article_box.find_all('img'):
                 src = img.get('src')
                 if src:
-                    # 💡 画像URLも省略形から完全なURLに自動変換
+                    # 画像URLも省略形から完全なURLに自動変換
                     img['src'] = urljoin(url, src)
             return str(article_box)
         return "<p>本文の抽出に失敗しました。（本文のタグが異なる可能性があります）</p>"
@@ -30,8 +30,8 @@ def get_blog_detail(session, url):
         return f"<p>記事取得エラー: {e}</p>"
 
 def create_rss():
-    # 💡 乃木坂ブログ一覧のURL（/listを追加）
-    list_url = "https://www.nogizaka46.com/s/n46/diary/MEMBER/list"
+    # 💡 修正：/list は不要でした！これが全員分の最新ブログ一覧ページです。
+    list_url = "https://www.nogizaka46.com/s/n46/diary/MEMBER"
     
     fg = FeedGenerator()
     fg.id(list_url)
@@ -55,7 +55,7 @@ def create_rss():
         
         article_links = []
         
-        # 💡 大改修：碧さんが見つけた「タイトル」のタグから直接探し出す！
+        # 碧さんが見つけた「タイトル」のタグから直接探し出す！
         title_tags = soup.find_all('p', class_='m--postone__ttl')
         
         if title_tags:
@@ -64,13 +64,13 @@ def create_rss():
                 # タイトルを囲んでいる <a> タグを親要素から探し出す
                 a_tag = title_tag.find_parent('a')
                 if a_tag and a_tag.has_attr('href'):
-                    # 💡 魔法の関数 urljoin で ../detail/123 を完全なURLに翻訳する
+                    # 魔法の関数 urljoin で ../detail/123 等を完全なURLに翻訳する
                     full_url = urljoin(res.url, a_tag['href'])
                     
                     if not any(link['url'] == full_url for link in article_links):
                         article_links.append({'url': full_url, 'element': a_tag})
         else:
-            print("❌ タイトルタグが見つかりません。")
+            print("❌ タイトルタグ（m--postone__ttl）が見つかりません。")
 
         print(f"処理対象の記事数: {len(article_links)}件")
 
