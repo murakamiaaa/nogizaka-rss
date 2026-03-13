@@ -1,12 +1,24 @@
-- name: Run script
-        run: |
-          python sakurazaka-rss.py
-          python Nogizaka-rss/nogizaka-rss.py  # 💡 フォルダを指定して実行
-      
+name: build
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 feedgen
+      - name: Run script
+        run: python nogizaka-rss.py
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 💡 保存するファイル名にフォルダ名を忘れずに追加！
-          git add feed.xml Nogizaka-rss/nogizaka.xml
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update RSS feeds" && git push)
+          git add feed.xml
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update feed" && git push)
