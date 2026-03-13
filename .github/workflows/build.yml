@@ -7,18 +7,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Install dependencies
-        run: pip install requests beautifulsoup4 feedgen
-      - name: Run script
-        run: python nogizaka-rss.py
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run scraper
+        run: |
+          python nogizaka-rss.py
+
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add feed.xml
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update feed" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update Nogizaka RSS" && git push)
