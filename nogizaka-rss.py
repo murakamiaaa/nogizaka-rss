@@ -5,33 +5,11 @@ import datetime
 import time
 import os
 import sys
-from urllib.parse import urljoin # 相対URLを絶対URLに翻訳する魔法
-
-def get_blog_detail(session, url):
-    """個別記事から本文を抽出"""
-    try:
-        time.sleep(1)
-        res = session.get(url, timeout=20)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # 本文が入っている箱
-        article_box = soup.find('div', class_='bd--edit')
-        
-        if article_box:
-            for img in article_box.find_all('img'):
-                src = img.get('src')
-                if src:
-                    # 画像URLも省略形から完全なURLに自動変換
-                    img['src'] = urljoin(url, src)
-            return str(article_box)
-        return "<p>本文の抽出に失敗しました。（本文のタグが異なる可能性があります）</p>"
-    except Exception as e:
-        return f"<p>記事取得エラー: {e}</p>"
+from urllib.parse import urljoin
 
 def create_rss():
-    # 💡 修正：/list は不要でした！これが全員分の最新ブログ一覧ページです。
-    list_url = "https://www.nogizaka46.com/s/n46/diary/MEMBER"
+    # ブログ一覧ページのURL
+    list_url = "https://www.nogizaka46.com/s/n46/diary/MEMBER/list"
     
     fg = FeedGenerator()
     fg.id(list_url)
@@ -48,53 +26,62 @@ def create_rss():
     print("--- 乃木坂46ブログ 解析開始 ---")
 
     try:
-        print(f"ブログ一覧にアクセス中: {list_url}")
+        print(f"一覧ページからURLを収集します: {list_url}")
         res = session.get(list_url, timeout=20)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        article_links = []
-        
-        # 碧さんが見つけた「タイトル」のタグから直接探し出す！
-        title_tags = soup.find_all('p', class_='m--postone__ttl')
-        
-        if title_tags:
-            print(f"ページ内から {len(title_tags)} 件のブログ記事を発見しました！")
-            for title_tag in title_tags:
-                # タイトルを囲んでいる <a> タグを親要素から探し出す
-                a_tag = title_tag.find_parent('a')
-                if a_tag and a_tag.has_attr('href'):
-                    # 魔法の関数 urljoin で ../detail/123 等を完全なURLに翻訳する
-                    full_url = urljoin(res.url, a_tag['href'])
-                    
-                    if not any(link['url'] == full_url for link in article_links):
-                        article_links.append({'url': full_url, 'element': a_tag})
-        else:
-            print("❌ タイトルタグ（m--postone__ttl）が見つかりません。")
+        # 💡 作戦変更：一覧ページからは「リンク（URL）」だけを回収する！
+        article_urls = []
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            # detail（個別記事）へのリンクだけを拾う
+            if '/s/n46/diary/detail/' in href:
+                full_url = urljoin(res.url, href)
+                if full_url not in article_urls:
+                    article_urls.append(full_url)
 
-        print(f"処理対象の記事数: {len(article_links)}件")
+        print(f"発見した記事リンク数: {len(article_urls)}件")
 
-        if not article_links:
+        if not article_urls:
+            print("❌ 記事のリンクが見つかりません。")
             sys.exit(1)
 
-        for item in article_links[:12]:
-            url = item['url']
-            element = item['element']
-            title_tag = element.find('p', class_='m--postone__ttl')
-            name_tag = element.find('p', class_='m--postone__name')
+        # 💡 収集したURL（最新12件）に直接アクセスして中身を引っこ抜く！
+        for url in article_urls[:12]:
+            print(f"記事を取得中: {url}")
+            time.sleep(1) # サーバーに優しく
+            
+            detail_res = session.get(url, timeout=20)
+            detail_res.raise_for_status()
+            detail_soup = BeautifulSoup(detail_res.text, 'html.parser')
+            
+            # 碧さんが見つけた「個別ページ用のタグ」をここで使う！
+            title_tag = detail_soup.find(class_='m--postone__ttl')
+            name_tag = detail_soup.find(class_='m--postone__name')
+            article_box = detail_soup.find('div', class_='bd--edit')
             
             blog_title = title_tag.get_text(strip=True) if title_tag else "タイトルなし"
             member_name = name_tag.get_text(strip=True) if name_tag else "メンバー不明"
             final_title = f"[{member_name}] {blog_title}"
-
-            print(f"解析中: {final_title}")
-            content = get_blog_detail(session, url)
             
+            print(f"  -> 解析成功: {final_title}")
+            
+            # 本文と画像の処理
+            content_html = "<p>本文の抽出に失敗しました。</p>"
+            if article_box:
+                for img in article_box.find_all('img'):
+                    src = img.get('src')
+                    if src:
+                        img['src'] = urljoin(url, src) # 画像も絶対URLに変換
+                content_html = str(article_box)
+            
+            # RSSに追加
             fe = fg.add_entry()
             fe.id(url)
             fe.title(final_title)
             fe.link(href=url)
-            fe.description(content)
+            fe.description(content_html)
             fe.pubDate(datetime.datetime.now(datetime.timezone.utc))
 
         output_file = 'feed.xml'
