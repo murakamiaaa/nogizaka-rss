@@ -5,6 +5,7 @@ import datetime
 import time
 import os
 import sys
+from urllib.parse import urljoin # 💡 魔法のツールを追加
 
 def get_blog_detail(session, url):
     """個別記事から本文を抽出"""
@@ -13,21 +14,24 @@ def get_blog_detail(session, url):
         res = session.get(url, timeout=20)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # 本文が入っている箱
         article_box = soup.find('div', class_='bd--edit')
+        
         if article_box:
             for img in article_box.find_all('img'):
                 src = img.get('src')
-                if src and src.startswith('/'):
-                    img['src'] = f"https://www.nogizaka46.com{src}"
+                if src:
+                    # 💡 画像URLも省略形から完全なURLに自動変換
+                    img['src'] = urljoin(url, src)
             return str(article_box)
-        return "<p>本文の抽出に失敗しました。</p>"
+        return "<p>本文の抽出に失敗しました。（本文のタグが異なる可能性があります）</p>"
     except Exception as e:
         return f"<p>記事取得エラー: {e}</p>"
 
 def create_rss():
-    base_url = "https://www.nogizaka46.com"
-    # 💡 修正箇所：乃木坂の正しいURLはこれです！
-    list_url = f"{base_url}/s/n46/diary/MEMBER"
+    # 💡 乃木坂ブログ一覧のURL（/listを追加）
+    list_url = "https://www.nogizaka46.com/s/n46/diary/MEMBER/list"
     
     fg = FeedGenerator()
     fg.id(list_url)
@@ -50,17 +54,27 @@ def create_rss():
         soup = BeautifulSoup(res.text, 'html.parser')
         
         article_links = []
-        for a in soup.find_all('a', href=True):
-            href = a['href']
-            if '/s/n46/diary/detail/' in href:
-                full_url = f"{base_url}{href}" if href.startswith('/') else href
-                if not any(link['url'] == full_url for link in article_links):
-                    article_links.append({'url': full_url, 'element': a})
+        
+        # 💡 大改修：碧さんが見つけた「タイトル」のタグから直接探し出す！
+        title_tags = soup.find_all('p', class_='m--postone__ttl')
+        
+        if title_tags:
+            print(f"ページ内から {len(title_tags)} 件のブログ記事を発見しました！")
+            for title_tag in title_tags:
+                # タイトルを囲んでいる <a> タグを親要素から探し出す
+                a_tag = title_tag.find_parent('a')
+                if a_tag and a_tag.has_attr('href'):
+                    # 💡 魔法の関数 urljoin で ../detail/123 を完全なURLに翻訳する
+                    full_url = urljoin(res.url, a_tag['href'])
+                    
+                    if not any(link['url'] == full_url for link in article_links):
+                        article_links.append({'url': full_url, 'element': a_tag})
+        else:
+            print("❌ タイトルタグが見つかりません。")
 
-        print(f"候補記事数: {len(article_links)}件")
+        print(f"処理対象の記事数: {len(article_links)}件")
 
         if not article_links:
-            print("❌ 記事が見つかりません。")
             sys.exit(1)
 
         for item in article_links[:12]:
