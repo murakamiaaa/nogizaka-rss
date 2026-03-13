@@ -9,7 +9,7 @@ import sys
 def get_blog_detail(session, url):
     """個別記事から本文を抽出"""
     try:
-        time.sleep(2) # 乃木坂は少し慎重に時間を空ける
+        time.sleep(1)
         res = session.get(url, timeout=20)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
@@ -25,9 +25,9 @@ def get_blog_detail(session, url):
         return f"<p>記事取得エラー: {e}</p>"
 
 def create_rss():
-    # 💡 404対策：あえて?ima=...を付けない素のURLから試す
     base_url = "https://www.nogizaka46.com"
-    list_url = f"{base_url}/s/n46/diary/blog/list"
+    # 💡 修正箇所：乃木坂の正しいURLはこれです！
+    list_url = f"{base_url}/s/n46/diary/MEMBER"
     
     fg = FeedGenerator()
     fg.id(list_url)
@@ -37,31 +37,15 @@ def create_rss():
     fg.language('ja')
 
     session = requests.Session()
-    # 💡 強力なブラウザ偽装ヘッダー
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ja-JP,ja;q=0.9",
-        "Referer": "https://www.google.com/"
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
     })
 
-    print("--- 乃木坂46ブログ 突破作戦開始 ---")
+    print("--- 乃木坂46ブログ 解析開始 ---")
 
     try:
-        # 💡 手順1：まず公式サイトのトップにアクセスしてクッキーを貰う
-        print("トップページに挨拶に行きます...")
-        session.get(base_url, timeout=20)
-        time.sleep(1)
-
-        # 💡 手順2：そのクッキーを持ってブログ一覧へ
         print(f"ブログ一覧にアクセス中: {list_url}")
         res = session.get(list_url, timeout=20)
-        
-        # もし404なら、?ima=0000を付けて再試行
-        if res.status_code == 404:
-            print("素のURLが404だったので、パラメータ付きで再試行します...")
-            res = session.get(list_url + "?ima=0000", timeout=20)
-        
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
         
@@ -76,7 +60,7 @@ def create_rss():
         print(f"候補記事数: {len(article_links)}件")
 
         if not article_links:
-            print("❌ 記事が見つかりません。HTMLを解析できませんでした。")
+            print("❌ 記事が見つかりません。")
             sys.exit(1)
 
         for item in article_links[:12]:
